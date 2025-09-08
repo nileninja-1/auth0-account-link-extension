@@ -1,36 +1,47 @@
-
 CURRENT_VERSION=$(node tools/attribute.js version)
 MAJORMINOR_VERSION_ONLY=$(node tools/attribute.js version ../package.json majorminor)
 EXTENSION_NAME="auth0-account-link"
 
+# Check if the current version is a beta version. If so, we'll
+# deploy to extensions/develop, rather than `extensions`.
+if echo "$CURRENT_VERSION" | grep -q "beta"; then
+  EXTENSIONS_PATH="extensions/develop"
+  echo "Beta version detected ($CURRENT_VERSION). Using 'develop' CDN path."
+else
+  EXTENSIONS_PATH="extensions"
+fi
+
 deploy_bundle() {
+  # Arguments:
+  #  $1 -> version string to publish (full or major.minor alias)
+
   if [ -z "$1" ]; then
     echo "No version provided. Skipping cdn publish…"
     exit 1
   fi
 
-  BUNDLE_EXISTS=$(aws s3 ls s3://assets.us.auth0.com/extensions/$EXTENSION_NAME/ | grep "$EXTENSION_NAME-$1.js")
-  CDN_EXISTS=$(aws s3 ls s3://assets.us.auth0.com/extensions/$EXTENSION_NAME/assets/ | grep "link.$1.min.css")
-  ADMIN_CDN_EXISTS=$(aws s3 ls s3://assets.us.auth0.com/extensions/$EXTENSION_NAME/assets/ | grep "admin.$1.min.css")
+  BUNDLE_EXISTS=$(aws s3 ls s3://assets.us.auth0.com/$EXTENSIONS_PATH/$EXTENSION_NAME/ | grep "$EXTENSION_NAME-$1.js")
+  CDN_EXISTS=$(aws s3 ls s3://assets.us.auth0.com/$EXTENSIONS_PATH/$EXTENSION_NAME/assets/ | grep "link.$1.min.css")
+  ADMIN_CDN_EXISTS=$(aws s3 ls s3://assets.us.auth0.com/$EXTENSIONS_PATH/$EXTENSION_NAME/assets/ | grep "admin.$1.min.css")
 
   if [ ! -z "$BUNDLE_EXISTS" ] && [ "$1" == "$CURRENT_VERSION" ]; then
     echo "There is already a $EXTENSION_NAME-$1.js in the cdn. Skipping cdn publish…"
   else
-    aws s3 cp build/bundle.js s3://assets.us.auth0.com/extensions/$EXTENSION_NAME/$EXTENSION_NAME-$1.js --region us-west-1 --acl public-read
+    aws s3 cp build/bundle.js s3://assets.us.auth0.com/$EXTENSIONS_PATH/$EXTENSION_NAME/$EXTENSION_NAME-$1.js --region us-west-1 --acl public-read
     echo "$EXTENSION_NAME-$1.js uploaded to the cdn"
   fi
 
   if [ ! -z "$CDN_EXISTS" ] && [ "$1" == "$CURRENT_VERSION" ]; then
     echo "There is already a link.$1.min.css in the cdn. Skipping cdn publish…"
   else
-    aws s3 cp dist/assets/link.$1.min.css s3://assets.us.auth0.com/extensions/$EXTENSION_NAME/assets/link.$1.min.css --region us-west-1 --cache-control "max-age=86400" --acl public-read
+    aws s3 cp dist/assets/link.$1.min.css s3://assets.us.auth0.com/$EXTENSIONS_PATH/$EXTENSION_NAME/assets/link.$1.min.css --region us-west-1 --cache-control "max-age=86400" --acl public-read
     echo "link.$1.min.css uploaded to the cdn"
   fi
 
   if [ ! -z "$ADMIN_CDN_EXISTS" ] && [ "$1" == "$CURRENT_VERSION" ]; then
     echo "There is already a admin.$1.min.css in the cdn. Skipping cdn publish…"
   else
-    aws s3 cp dist/assets/admin.$1.min.css s3://assets.us.auth0.com/extensions/$EXTENSION_NAME/assets/admin.$1.min.css --region us-west-1 --cache-control "max-age=86400" --acl public-read
+    aws s3 cp dist/assets/admin.$1.min.css s3://assets.us.auth0.com/$EXTENSIONS_PATH/$EXTENSION_NAME/assets/admin.$1.min.css --region us-west-1 --cache-control "max-age=86400" --acl public-read
     echo "admin.$1.min.css uploaded to the cdn"
   fi
 }

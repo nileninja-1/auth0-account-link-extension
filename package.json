@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "serve:dev": "gulp run",
-    "client:build": "minify --clean --output dist/assets/link.$npm_package_version.min.css public/css/link.css && minify --clean --output dist/assets/admin.$npm_package_version.min.css public/css/admin.css",
+    "client:build": "minify --clean --output dist/assets/link.$npm_package_version.min.css public/css/link.css && minify --clean --output dist/assets/admin.$npm_package_version.min.css public/css/admin.css && MAJORMINOR=$(node tools/attribute.js version ../package.json majorminor) && cp dist/assets/link.$npm_package_version.min.css dist/assets/link.$MAJORMINOR.min.css && cp dist/assets/admin.$npm_package_version.min.css dist/assets/admin.$MAJORMINOR.min.css",
     "extension:build": "a0-ext build:server ./webtask.js ./dist && cp ./dist/auth0-account-link-extension.extension.$npm_package_version.js ./build/bundle.js",
     "build": "yarn run client:build && yarn run extension:build"
   },

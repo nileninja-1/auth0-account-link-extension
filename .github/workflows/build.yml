@@ -2,7 +2,9 @@ name: Build
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions:
   id-token: write
@@ -10,9 +12,30 @@ permissions:
 
 env:
   AWS_ROLE: ${{ secrets.awsIAMS3UploadRole }}
+  AWS_ROLE_BETA: ${{ secrets.awsIAMS3UploadBetaRole }}
 
 jobs:
+  pre-flight:
+    runs-on: ubuntu-latest
+    outputs:
+      should_publish_beta: ${{ steps.check.outputs.beta }}
+      should_publish_prod: ${{ steps.check.outputs.prod }}
+
+    steps:
+      - name: Check conditions
+        id: check
+        run: |
+          # Evaluate the logic directly and assign to shell variables
+          beta_condition=${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && contains(toJson(github.event.pull_request.labels), 'publish-beta') }}
+          prod_condition=${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+
+          # Set the outputs for other jobs to use
+          echo "beta=$beta_condition" >> $GITHUB_OUTPUT
+          echo "prod=$prod_condition" >> $GITHUB_OUTPUT
+
   build-and-deploy:
+    needs: pre-flight
+    if: needs.pre-flight.outputs.should_publish_beta == 'true' || needs.pre-flight.outputs.should_publish_prod == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -21,7 +44,12 @@ jobs:
 
       - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e
         with:
-          node-version: '22'
+          node-version: "22"
+
+      - name: Inject beta version (internal PRs labeled publish-beta)
+        if: needs.pre-flight.outputs.should_publish_beta == 'true'
+        # Pass monotonically increasing GitHub run number to ensure unique beta artifacts.
+        run: node tools/beta-version.js ${{ github.run_number }}
 
       - name: Install dependencies
         run: yarn
@@ -29,11 +57,20 @@ jobs:
       - name: Run Build
         run: yarn run build
 
-      - name: Configure AWS Credentials using OIDC
+      - name: Configure AWS Credentials (beta) using OIDC
+        if: needs.pre-flight.outputs.should_publish_beta == 'true'
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4 on 2025-01-06
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_BETA }}
+          role-session-name: github-action-account-link-extension-publish-beta
+          aws-region: us-west-1
+
+      - name: Configure AWS Credentials (prod) using OIDC
+        if: needs.pre-flight.outputs.should_publish_prod == 'true'
         uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502 # v4 on 2025-01-06
         with:
           role-to-assume: ${{ env.AWS_ROLE }}
-          role-session-name: github-action-account-link-extension-publish
+          role-session-name: github-action-account-link-extension-publish-prod
           aws-region: us-west-1
 
       - name: Run Deploy

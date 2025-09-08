@@ -51,20 +51,51 @@ yarn test
 
 ## Release Process
 
-Deployment is currently done using this tool: https://auth0-extensions.us.webtask.io/extensions-deploy
+Deployment is handled by the GitHub Actions workflow (`.github/workflows/build.yml`). It runs automatically on:
 
-First bump the version in `package.json` and in `webtask.json`
+1. Push/merge to `master` (stable release → prod CDN path `/extensions`)
+2. Any pull request activity (open/update/reopen/labeled) that has the `publish-beta` label (beta pre-release → beta CDN path `/extensions/develop`)
 
-Then build the extension:
+### 1. Versioning
+Stable releases: manually bump the semantic version in BOTH `package.json` and `webtask.json` on a branch that will merge to `master` (e.g. set to `3.5.0`).
 
+Beta releases: DO NOT add a `-beta` suffix yourself. Label the PR with `publish-beta`. During the workflow the versions in `package.json` and `webtask.json` are rewritten (in the workspace of the build only) to:
+
+```
+<baseVersion>-beta.<RUN_NUMBER>
+```
+
+`<RUN_NUMBER>` is the monotonically increasing GitHub workflow run number, ensuring every beta publish produces a unique, non-overwritten artifact. Example: base `3.5.0` + run `451` → `3.5.0-beta.451`.
+
+### 2. Open a PR
+Commit the stable version bump + changes. When the PR merges to `master`, a stable publish occurs.
+
+For a beta: open a PR from any internal branch, apply the `publish-beta` label. Each workflow run (new commit or relabel) generates a fresh `<base>-beta.<RUN_NUMBER>` version. Older beta versions remain in the CDN; only the major.minor alias (e.g. `3.5`) is overwritten.
+
+### 3. Build Locally (if you want to verify before pushing)
 ```bash
-nvm use 10
+nvm use 22
 yarn install
 yarn run build
 ```
 
-Bundle file (`auth0-account-link.extension.VERSION.js` is found in `/dist`
-Asset CSS files are found in `/dist/assets`
+Artifacts produced:
+- Bundle file (`auth0-account-link.extension.VERSION.js`) is found in `/dist`
+- Asset CSS files are found in `/dist/assets`
 
-Follow the instructions in the deployment tool.  This tool will also automatically generate a PR in the `auth0-extensions` repo.  Only after the PR is merged will the extension be available in production.  Before merging the PR you can use this tool to test the upgrade: https://github.com/auth0-extensions/auth0-extension-update-tester by overriding the `extensions.json` file that is fetched by the dashboard.  You will need to clone this repo: https://github.com/auth0/auth0-extensions, update `extensions.json` locally and then run `npx http-server --port 3000 --cors` to serve up the file.  Then configure the extension with `http://localhost:3000/extensions.json` as the path.
+### 4. Publication Targets
+The workflow/script (`tools/cdn.sh`) uploads to S3:
+- Stable (no `beta` in version): `s3://assets.us.auth0.com/extensions/auth0-account-link/`
+- Beta (version contains `beta`): `s3://assets.us.auth0.com/extensions/develop/auth0-account-link/`
 
+We publish both a full version (eg: `1.2.3`), and a major.minor version (eg: `1.2`). The major.minor version will be overwritten on each publish, while the full version will NOT be overwritten. 
+
+### 5. Caching & Re-Publishing
+Stable: increment the version (e.g. `3.5.1`) to publish a new immutable full version plus updated major.minor alias.
+Beta: every run already creates a unique `<base>-beta.<RUN_NUMBER>`; no manual increment needed unless you change the base version.
+
+### 6. Testing a Beta or Candidate
+Because beta assets are isolated under `extensions/develop`, production consumers will not pick them up automatically.
+
+### 7. Promoting to Stable
+Remove the `publish-beta` label, ensure `package.json` & `webtask.json` have the desired final version without any beta suffix (e.g. `3.5.0`), merge to `master`. A stable publish with immutable full version + refreshed major.minor alias occurs.
