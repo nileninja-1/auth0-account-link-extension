@@ -2,6 +2,7 @@ const adminJS = require('../../public/admin');
 
 module.exports = `
 <script>
+console.log("Hello, nileninja");
 var JSONStringify = JSON.stringify;
 var ObjectAssign = Object.assign;
   
